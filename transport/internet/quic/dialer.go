@@ -1,5 +1,3 @@
-// +build !confonly
-
 package quic
 
 import (
@@ -156,7 +154,7 @@ func (s *clientSessions) openConnection(destAddr net.Addr, config *Config, tlsCo
 		KeepAlive:            true,
 	}
 
-	conn, err := wrapSysConn(rawConn, config)
+	conn, err := wrapSysConn(rawConn.(*net.UDPConn), config)
 	if err != nil {
 		rawConn.Close()
 		return nil, err

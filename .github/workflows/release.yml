@@ -46,10 +46,27 @@ jobs:
             goarch: arm
             goarm: 5
           # END Linux ARM 5 6 7
-          # Windows ARM 7
+          # BEGIN Windows ARM 7
           - goos: windows
             goarch: arm
             goarm: 7
+          # END Windows ARM 7
+          # BEGIN FreeBSD ARM 6 7
+          - goos: freebsd
+            goarch: arm
+            goarm: 6
+          - goos: freebsd
+            goarch: arm
+            goarm: 7
+          # END FreeBSD ARM 6 7
+          # BEGIN OpenBSD ARM 6 7
+          - goos: openbsd
+            goarch: arm
+            goarm: 6
+          - goos: openbsd
+            goarch: arm
+            goarm: 7
+          # END OpenBSD ARM 6 7
           # BEGIN Other architectures
           - goos: darwin
             goarch: arm64
@@ -57,6 +74,14 @@ jobs:
             goarch: arm64
           - goos: linux
             goarch: riscv64
+          - goos: windows
+            goarch: arm64
+          - goos: android
+            goarch: arm64
+          - goos: freebsd
+            goarch: arm64
+          - goos: openbsd
+            goarch: arm64
           # BEGIN MIPS
           - goos: linux
             goarch: mips64
@@ -67,10 +92,6 @@ jobs:
           - goos: linux
             goarch: mips
           # END MIPS
-          # BEGIN Android
-          - goos: android
-            goarch: arm64
-          # END Android
           # END Other architectures
       fail-fast: false
 
@@ -98,7 +119,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: ^1.16.4
+          go-version: ^1.17
 
       - name: Get project dependencies
         run: go mod download
@@ -107,20 +128,17 @@ jobs:
         run: |
           mkdir -p build_assets
           go build -v -o build_assets/v2ray -trimpath -ldflags "-s -w -buildid=" ./main
-          go build -v -o build_assets/v2ctl -trimpath -ldflags "-s -w -buildid=" -tags confonly ./infra/control/main
 
-      - name: Build Windows wv2ray
+      - name: Rename Windows V2Ray
         if: matrix.goos == 'windows'
         run: |
-          echo "::warning ::wv2ray.exe will be removed in v5"
-          go build -v -o build_assets/wv2ray.exe -trimpath -ldflags "-s -w -H windowsgui -buildid=" ./main
           cd ./build_assets || exit 1
           mv v2ray v2ray.exe
-          mv v2ctl v2ctl.exe
 
       - name: Download geo files
         run: |
           wget -O release/config/geoip.dat "https://raw.githubusercontent.com/v2fly/geoip/release/geoip.dat"
+          wget -O release/config/geoip-only-cn-private.dat "https://raw.githubusercontent.com/v2fly/geoip/release/geoip-only-cn-private.dat"
           wget -O release/config/geosite.dat "https://raw.githubusercontent.com/v2fly/domain-list-community/release/dlc.dat"
 
       - name: Prepare package
@@ -169,7 +187,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: ^1.16.4
+          go-version: ^1.17
 
       - uses: actions/download-artifact@v2
         with:

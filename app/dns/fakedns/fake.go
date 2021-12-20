@@ -1,3 +1,4 @@
+//go:build !confonly
 // +build !confonly
 
 package fakedns
@@ -46,7 +47,7 @@ func (fkdns *Holder) Start() error {
 	if fkdns.config != nil && fkdns.config.IpPool != "" && fkdns.config.LruSize != 0 {
 		return fkdns.initializeFromConfig()
 	}
-	return nil
+	return newError("invalid fakeDNS setting")
 }
 
 func (fkdns *Holder) Close() error {
@@ -191,6 +192,8 @@ func (h *HolderMulti) Start() error {
 			if err := v.Start(); err != nil {
 				return newError("Cannot start all fake dns pools").Base(err)
 			}
+		} else {
+			return newError("invalid fakeDNS setting")
 		}
 	}
 	return nil

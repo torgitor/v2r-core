@@ -1,5 +1,3 @@
-// +build !confonly
-
 package inbound
 
 //go:generate go run github.com/v2fly/v2ray-core/v4/common/errors/errorgen
@@ -19,6 +17,7 @@ import (
 	"github.com/v2fly/v2ray-core/v4/common/net"
 	"github.com/v2fly/v2ray-core/v4/common/platform"
 	"github.com/v2fly/v2ray-core/v4/common/protocol"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/common/session"
 	"github.com/v2fly/v2ray-core/v4/common/signal"
 	"github.com/v2fly/v2ray-core/v4/common/task"
@@ -203,7 +202,9 @@ func transferResponse(timer signal.ActivityUpdater, session *encoding.ServerSess
 		return err
 	}
 
-	if request.Option.Has(protocol.RequestOptionChunkStream) {
+	account := request.User.Account.(*vmess.MemoryAccount)
+
+	if request.Option.Has(protocol.RequestOptionChunkStream) && !account.NoTerminationSignal {
 		if err := bodyWriter.WriteMultiBuffer(buf.MultiBuffer{}); err != nil {
 			return err
 		}
@@ -360,6 +361,23 @@ var (
 func init() {
 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
 		return New(ctx, config.(*Config))
+	}))
+
+	common.Must(common.RegisterConfig((*SimplifiedConfig)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
+		simplifiedServer := config.(*SimplifiedConfig)
+		fullConfig := &Config{
+			User: func() (users []*protocol.User) {
+				for _, v := range simplifiedServer.Users {
+					account := &vmess.Account{Id: v}
+					users = append(users, &protocol.User{
+						Account: serial.ToTypedMessage(account),
+					})
+				}
+				return
+			}(),
+		}
+
+		return common.CreateObject(ctx, fullConfig)
 	}))
 
 	defaultFlagValue := "NOT_DEFINED_AT_ALL"

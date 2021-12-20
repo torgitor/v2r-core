@@ -13,6 +13,7 @@ import (
 
 	"github.com/v2fly/v2ray-core/v4/app/router"
 	. "github.com/v2fly/v2ray-core/v4/app/router/command"
+	"github.com/v2fly/v2ray-core/v4/app/router/routercommon"
 	"github.com/v2fly/v2ray-core/v4/app/stats"
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/net"
@@ -232,11 +233,11 @@ func TestSerivceTestRoute(t *testing.T) {
 				TargetTag:      &router.RoutingRule_Tag{Tag: "out"},
 			},
 			{
-				Domain:    []*router.Domain{{Type: router.Domain_Domain, Value: "com"}},
+				Domain:    []*routercommon.Domain{{Type: routercommon.Domain_RootDomain, Value: "com"}},
 				TargetTag: &router.RoutingRule_Tag{Tag: "out"},
 			},
 			{
-				SourceGeoip: []*router.GeoIP{{CountryCode: "private", Cidr: []*router.CIDR{{Ip: []byte{127, 0, 0, 0}, Prefix: 8}}}},
+				SourceGeoip: []*routercommon.GeoIP{{CountryCode: "private", Cidr: []*routercommon.CIDR{{Ip: []byte{127, 0, 0, 0}, Prefix: 8}}}},
 				TargetTag:   &router.RoutingRule_Tag{Tag: "out"},
 			},
 			{
@@ -248,7 +249,7 @@ func TestSerivceTestRoute(t *testing.T) {
 				TargetTag: &router.RoutingRule_Tag{Tag: "out"},
 			},
 		},
-	}, mocks.NewDNSClient(mockCtl), mocks.NewOutboundManager(mockCtl)))
+	}, mocks.NewDNSClient(mockCtl), mocks.NewOutboundManager(mockCtl), nil))
 
 	lis := bufconn.Listen(1024 * 1024)
 	bufDialer := func(context.Context, string) (net.Conn, error) {

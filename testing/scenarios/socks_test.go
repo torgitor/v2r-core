@@ -5,6 +5,7 @@ import (
 	"time"
 
 	xproxy "golang.org/x/net/proxy"
+	"google.golang.org/protobuf/types/known/anypb"
 	socks4 "h12.io/socks"
 
 	core "github.com/v2fly/v2ray-core/v4"
@@ -194,7 +195,7 @@ func TestSocksBridageUDPWithRouting(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&router.Config{
 				Rule: []*router.RoutingRule{
 					{

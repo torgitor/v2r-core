@@ -1,5 +1,3 @@
-// +build !confonly
-
 package tcp
 
 import (
@@ -10,6 +8,7 @@ import (
 
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/net"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/common/session"
 	"github.com/v2fly/v2ray-core/v4/transport/internet"
 	"github.com/v2fly/v2ray-core/v4/transport/internet/tls"
@@ -75,7 +74,7 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 	}
 
 	if tcpSettings.HeaderSettings != nil {
-		headerConfig, err := tcpSettings.HeaderSettings.GetInstance()
+		headerConfig, err := serial.GetInstanceOf(tcpSettings.HeaderSettings)
 		if err != nil {
 			return nil, newError("invalid header settings").Base(err).AtError()
 		}

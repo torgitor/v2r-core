@@ -43,6 +43,11 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *MemoryStrea
 		}
 
 		protocol := streamSettings.ProtocolName
+
+		if originalProtocolName := getOriginalMessageName(streamSettings); originalProtocolName != "" {
+			protocol = originalProtocolName
+		}
+
 		dialer := transportDialerCache[protocol]
 		if dialer == nil {
 			return nil, newError(protocol, " dialer not registered").AtError()

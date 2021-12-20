@@ -1,5 +1,3 @@
-// +build !confonly
-
 package dns
 
 import (
@@ -213,7 +211,7 @@ L:
 		case dnsmessage.TypeAAAA:
 			ans, err := parser.AAAAResource()
 			if err != nil {
-				newError("failed to parse A record for domain: ", ah.Name).Base(err).WriteToLog()
+				newError("failed to parse AAAA record for domain: ", ah.Name).Base(err).WriteToLog()
 				break L
 			}
 			ipRecord.IP = append(ipRecord.IP, net.IPAddress(ans.AAAA[:]))

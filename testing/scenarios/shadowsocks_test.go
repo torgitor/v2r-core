@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/log"
@@ -120,10 +121,9 @@ func TestShadowsocksAES256GCMTCP(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -150,10 +150,9 @@ func TestShadowsocksAES256GCMTCP(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -215,12 +214,11 @@ func TestShadowsocksAES128GCMUDP(t *testing.T) {
 		CipherType: shadowsocks.CipherType_AES_128_GCM,
 	})
 
-	serverPort := tcp.PickPort()
+	serverPort := udp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -245,12 +243,11 @@ func TestShadowsocksAES128GCMUDP(t *testing.T) {
 		},
 	}
 
-	clientPort := tcp.PickPort()
+	clientPort := udp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -313,10 +310,9 @@ func TestShadowsocksAES128GCMUDPMux(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -341,12 +337,11 @@ func TestShadowsocksAES128GCMUDPMux(t *testing.T) {
 		},
 	}
 
-	clientPort := tcp.PickPort()
+	clientPort := udp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{

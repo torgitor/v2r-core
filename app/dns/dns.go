@@ -1,3 +1,4 @@
+//go:build !confonly
 // +build !confonly
 
 // Package dns is an implementation of core.DNS feature.
@@ -15,24 +16,28 @@ import (
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/errors"
 	"github.com/v2fly/v2ray-core/v4/common/net"
+	"github.com/v2fly/v2ray-core/v4/common/platform"
 	"github.com/v2fly/v2ray-core/v4/common/session"
 	"github.com/v2fly/v2ray-core/v4/common/strmatcher"
 	"github.com/v2fly/v2ray-core/v4/features"
 	"github.com/v2fly/v2ray-core/v4/features/dns"
+	"github.com/v2fly/v2ray-core/v4/infra/conf/cfgcommon"
+	"github.com/v2fly/v2ray-core/v4/infra/conf/geodata"
 )
 
 // DNS is a DNS rely server.
 type DNS struct {
 	sync.Mutex
-	tag             string
-	disableCache    bool
-	disableFallback bool
-	ipOption        *dns.IPOption
-	hosts           *StaticHosts
-	clients         []*Client
-	ctx             context.Context
-	domainMatcher   strmatcher.IndexMatcher
-	matcherInfos    []DomainMatcherInfo
+	tag                    string
+	disableCache           bool
+	disableFallback        bool
+	disableFallbackIfMatch bool
+	ipOption               *dns.IPOption
+	hosts                  *StaticHosts
+	clients                []*Client
+	ctx                    context.Context
+	domainMatcher          strmatcher.IndexMatcher
+	matcherInfos           []DomainMatcherInfo
 }
 
 // DomainMatcherInfo contains information attached to index returned by Server.domainMatcher
@@ -93,7 +98,7 @@ func New(ctx context.Context, config *Config) (*DNS, error) {
 
 	// MatcherInfos is ensured to cover the maximum index domainMatcher could return, where matcher's index starts from 1
 	matcherInfos := make([]DomainMatcherInfo, domainRuleCount+1)
-	domainMatcher := &strmatcher.MatcherGroup{}
+	domainMatcher := &strmatcher.LinearIndexMatcher{}
 	geoipContainer := router.GeoIPMatcherContainer{}
 
 	for _, endpoint := range config.NameServers {
@@ -134,15 +139,16 @@ func New(ctx context.Context, config *Config) (*DNS, error) {
 	}
 
 	return &DNS{
-		tag:             tag,
-		hosts:           hosts,
-		ipOption:        ipOption,
-		clients:         clients,
-		ctx:             ctx,
-		domainMatcher:   domainMatcher,
-		matcherInfos:    matcherInfos,
-		disableCache:    config.DisableCache,
-		disableFallback: config.DisableFallback,
+		tag:                    tag,
+		hosts:                  hosts,
+		ipOption:               ipOption,
+		clients:                clients,
+		ctx:                    ctx,
+		domainMatcher:          domainMatcher,
+		matcherInfos:           matcherInfos,
+		disableCache:           config.DisableCache,
+		disableFallback:        config.DisableFallback,
+		disableFallbackIfMatch: config.DisableFallbackIfMatch,
 	}, nil
 }
 
@@ -169,29 +175,27 @@ func (s *DNS) IsOwnLink(ctx context.Context) bool {
 
 // LookupIP implements dns.Client.
 func (s *DNS) LookupIP(domain string) ([]net.IP, error) {
-	return s.lookupIPInternal(domain, dns.IPOption{
-		IPv4Enable: true,
-		IPv6Enable: true,
-		FakeEnable: s.ipOption.FakeEnable,
-	})
+	return s.lookupIPInternal(domain, *s.ipOption)
 }
 
 // LookupIPv4 implements dns.IPv4Lookup.
 func (s *DNS) LookupIPv4(domain string) ([]net.IP, error) {
-	return s.lookupIPInternal(domain, dns.IPOption{
-		IPv4Enable: true,
-		IPv6Enable: false,
-		FakeEnable: s.ipOption.FakeEnable,
-	})
+	if !s.ipOption.IPv4Enable {
+		return nil, dns.ErrEmptyResponse
+	}
+	o := *s.ipOption
+	o.IPv6Enable = false
+	return s.lookupIPInternal(domain, o)
 }
 
 // LookupIPv6 implements dns.IPv6Lookup.
 func (s *DNS) LookupIPv6(domain string) ([]net.IP, error) {
-	return s.lookupIPInternal(domain, dns.IPOption{
-		IPv4Enable: false,
-		IPv6Enable: true,
-		FakeEnable: s.ipOption.FakeEnable,
-	})
+	if !s.ipOption.IPv6Enable {
+		return nil, dns.ErrEmptyResponse
+	}
+	o := *s.ipOption
+	o.IPv4Enable = false
+	return s.lookupIPInternal(domain, o)
 }
 
 func (s *DNS) lookupIPInternal(domain string, option dns.IPOption) ([]net.IP, error) {
@@ -200,9 +204,7 @@ func (s *DNS) lookupIPInternal(domain string, option dns.IPOption) ([]net.IP, er
 	}
 
 	// Normalize the FQDN form query
-	if strings.HasSuffix(domain, ".") {
-		domain = domain[:len(domain)-1]
-	}
+	domain = strings.TrimSuffix(domain, ".")
 
 	// Static host lookup
 	switch addrs := s.hosts.Lookup(domain, option); {
@@ -265,6 +267,7 @@ func (s *DNS) sortClients(domain string) []*Client {
 	domainRules := []string{}
 
 	// Priority domain matching
+	hasMatch := false
 	for _, match := range s.domainMatcher.Match(domain) {
 		info := s.matcherInfos[match]
 		client := s.clients[info.clientIdx]
@@ -276,9 +279,10 @@ func (s *DNS) sortClients(domain string) []*Client {
 		clientUsed[info.clientIdx] = true
 		clients = append(clients, client)
 		clientNames = append(clientNames, client.Name())
+		hasMatch = true
 	}
 
-	if !s.disableFallback {
+	if !(s.disableFallback || s.disableFallbackIfMatch && hasMatch) {
 		// Default round-robin query
 		for idx, client := range s.clients {
 			if clientUsed[idx] || client.skipFallback {
@@ -309,5 +313,70 @@ func (s *DNS) sortClients(domain string) []*Client {
 func init() {
 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
 		return New(ctx, config.(*Config))
+	}))
+
+	common.Must(common.RegisterConfig((*SimplifiedConfig)(nil), func(ctx context.Context, config interface{}) (interface{}, error) { // nolint: staticcheck
+		ctx = cfgcommon.NewConfigureLoadingContext(context.Background()) // nolint: staticcheck
+
+		geoloadername := platform.NewEnvFlag("v2ray.conf.geoloader").GetValue(func() string {
+			return "standard"
+		})
+
+		if loader, err := geodata.GetGeoDataLoader(geoloadername); err == nil {
+			cfgcommon.SetGeoDataLoader(ctx, loader)
+		} else {
+			return nil, newError("unable to create geo data loader ").Base(err)
+		}
+
+		cfgEnv := cfgcommon.GetConfigureLoadingEnvironment(ctx)
+		geoLoader := cfgEnv.GetGeoLoader()
+
+		simplifiedConfig := config.(*SimplifiedConfig)
+		for _, v := range simplifiedConfig.NameServer {
+			for _, geo := range v.Geoip {
+				if geo.Code != "" {
+					filepath := "geoip.dat"
+					if geo.FilePath != "" {
+						filepath = geo.FilePath
+					} else {
+						geo.CountryCode = geo.Code
+					}
+					var err error
+					geo.Cidr, err = geoLoader.LoadIP(filepath, geo.Code)
+					if err != nil {
+						return nil, newError("unable to load geoip").Base(err)
+					}
+				}
+			}
+		}
+
+		var nameservers []*NameServer
+
+		for _, v := range simplifiedConfig.NameServer {
+			nameserver := &NameServer{
+				Address:      v.Address,
+				ClientIp:     net.ParseIP(v.ClientIp),
+				SkipFallback: v.SkipFallback,
+				Geoip:        v.Geoip,
+			}
+			for _, prioritizedDomain := range v.PrioritizedDomain {
+				nameserver.PrioritizedDomain = append(nameserver.PrioritizedDomain, &NameServer_PriorityDomain{
+					Type:   prioritizedDomain.Type,
+					Domain: prioritizedDomain.Domain,
+				})
+			}
+			nameservers = append(nameservers, nameserver)
+		}
+
+		fullConfig := &Config{
+			NameServer:      nameservers,
+			ClientIp:        net.ParseIP(simplifiedConfig.ClientIp),
+			StaticHosts:     simplifiedConfig.StaticHosts,
+			Tag:             simplifiedConfig.Tag,
+			DisableCache:    simplifiedConfig.DisableCache,
+			QueryStrategy:   simplifiedConfig.QueryStrategy,
+			DisableFallback: simplifiedConfig.DisableFallback,
+		}
+		return common.CreateObject(ctx, fullConfig)
 	}))
 }

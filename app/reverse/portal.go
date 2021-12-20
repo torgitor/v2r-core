@@ -1,5 +1,3 @@
-// +build !confonly
-
 package reverse
 
 import (
@@ -7,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/buf"
@@ -154,7 +152,7 @@ func (p *StaticMuxPicker) PickAvailable() (*mux.ClientWorker, error) {
 		return nil, newError("empty worker list")
 	}
 
-	var minIdx int = -1
+	minIdx := -1
 	var minConn uint32 = 9999
 	for i, w := range p.workers {
 		if w.draining {

@@ -1,3 +1,4 @@
+//go:build !confonly
 // +build !confonly
 
 package observatory
@@ -7,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"sync"
 	"time"
 
@@ -67,6 +69,7 @@ func (o *Observer) background() {
 		}
 
 		outbounds := hs.Select(o.config.SubjectSelector)
+		sort.Strings(outbounds)
 
 		o.updateStatus(outbounds)
 
@@ -76,7 +79,11 @@ func (o *Observer) background() {
 			if o.finished.Done() {
 				return
 			}
-			time.Sleep(time.Second * 10)
+			sleepTime := time.Second * 10
+			if o.config.ProbeInterval != 0 {
+				sleepTime = time.Duration(o.config.ProbeInterval)
+			}
+			time.Sleep(sleepTime)
 		}
 	}
 }
@@ -106,7 +113,7 @@ func (o *Observer) probe(outbound string) ProbeResult {
 				trackedCtx := session.TrackedConnectionError(o.ctx, errorCollectorForRequest)
 				conn, err := tagged.Dialer(trackedCtx, dest, outbound)
 				if err != nil {
-					return newError("cannot dial remote address", dest).Base(err)
+					return newError("cannot dial remote address ", dest).Base(err)
 				}
 				connection = conn
 				return nil
@@ -129,7 +136,11 @@ func (o *Observer) probe(outbound string) ProbeResult {
 	var GETTime time.Duration
 	err := task.Run(o.ctx, func() error {
 		startTime := time.Now()
-		response, err := httpClient.Get("https://api.v2fly.org/checkConnection.svgz")
+		probeURL := "https://api.v2fly.org/checkConnection.svgz"
+		if o.config.ProbeUrl != "" {
+			probeURL = o.config.ProbeUrl
+		}
+		response, err := httpClient.Get(probeURL)
 		if err != nil {
 			return newError("outbound failed to relay connection").Base(err)
 		}
@@ -144,12 +155,12 @@ func (o *Observer) probe(outbound string) ProbeResult {
 		fullerr := newError("underlying connection failed").Base(errorCollectorForRequest.UnderlyingError())
 		fullerr = newError("with outbound handler report").Base(fullerr)
 		fullerr = newError("GET request failed:", err).Base(fullerr)
-		fullerr = newError("the outbound ", outbound, "is dead:").Base(fullerr)
+		fullerr = newError("the outbound ", outbound, " is dead:").Base(fullerr)
 		fullerr = fullerr.AtInfo()
 		fullerr.WriteToLog()
 		return ProbeResult{Alive: false, LastErrorReason: fullerr.Error()}
 	}
-	newError("the outbound ", outbound, "is alive:", GETTime.Seconds()).AtInfo().WriteToLog()
+	newError("the outbound ", outbound, " is alive:", GETTime.Seconds()).AtInfo().WriteToLog()
 	return ProbeResult{Alive: true, Delay: GETTime.Milliseconds()}
 }
 

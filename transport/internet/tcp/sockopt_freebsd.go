@@ -1,5 +1,5 @@
+//go:build freebsd
 // +build freebsd
-// +build !confonly
 
 package tcp
 

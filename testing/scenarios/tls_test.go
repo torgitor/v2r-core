@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/proxyman"
@@ -47,7 +48,7 @@ func TestSimpleTLSConnection(t *testing.T) {
 					Listen:    net.NewIPOrDomain(net.LocalHostIP),
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
 							}),
@@ -109,7 +110,7 @@ func TestSimpleTLSConnection(t *testing.T) {
 				SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								AllowInsecure: true,
 							}),
@@ -124,7 +125,7 @@ func TestSimpleTLSConnection(t *testing.T) {
 	common.Must(err)
 	defer CloseAllServers(servers)
 
-	if err := testTCPConn(clientPort, 1024, time.Second*2)(); err != nil {
+	if err := testTCPConn(clientPort, 1024, time.Second*20)(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -160,7 +161,7 @@ func TestAutoIssuingCertificate(t *testing.T) {
 					Listen:    net.NewIPOrDomain(net.LocalHostIP),
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{{
 									Certificate: certPEM,
@@ -226,7 +227,7 @@ func TestAutoIssuingCertificate(t *testing.T) {
 				SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								ServerName: "v2fly.org",
 								Certificate: []*tls.Certificate{{
@@ -246,7 +247,7 @@ func TestAutoIssuingCertificate(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	for i := 0; i < 10; i++ {
-		if err := testTCPConn(clientPort, 1024, time.Second*2)(); err != nil {
+		if err := testTCPConn(clientPort, 1024, time.Second*20)(); err != nil {
 			t.Error(err)
 		}
 	}
@@ -271,7 +272,7 @@ func TestTLSOverKCP(t *testing.T) {
 					StreamSettings: &internet.StreamConfig{
 						Protocol:     internet.TransportProtocol_MKCP,
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
 							}),
@@ -334,7 +335,7 @@ func TestTLSOverKCP(t *testing.T) {
 					StreamSettings: &internet.StreamConfig{
 						Protocol:     internet.TransportProtocol_MKCP,
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								AllowInsecure: true,
 							}),
@@ -349,7 +350,7 @@ func TestTLSOverKCP(t *testing.T) {
 	common.Must(err)
 	defer CloseAllServers(servers)
 
-	if err := testTCPConn(clientPort, 1024, time.Second*2)(); err != nil {
+	if err := testTCPConn(clientPort, 1024, time.Second*20)(); err != nil {
 		t.Error(err)
 	}
 }
@@ -373,7 +374,7 @@ func TestTLSOverWebSocket(t *testing.T) {
 					StreamSettings: &internet.StreamConfig{
 						Protocol:     internet.TransportProtocol_WebSocket,
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
 							}),
@@ -442,7 +443,7 @@ func TestTLSOverWebSocket(t *testing.T) {
 							},
 						},
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								AllowInsecure: true,
 							}),
@@ -494,7 +495,7 @@ func TestHTTP2(t *testing.T) {
 							},
 						},
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil))},
 							}),
@@ -566,7 +567,7 @@ func TestHTTP2(t *testing.T) {
 							},
 						},
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								AllowInsecure: true,
 							}),
@@ -610,7 +611,7 @@ func TestSimpleTLSConnectionPinned(t *testing.T) {
 					Listen:    net.NewIPOrDomain(net.LocalHostIP),
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								Certificate: []*tls.Certificate{certificate},
 							}),
@@ -672,7 +673,7 @@ func TestSimpleTLSConnectionPinned(t *testing.T) {
 				SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
 					StreamSettings: &internet.StreamConfig{
 						SecurityType: serial.GetMessageType(&tls.Config{}),
-						SecuritySettings: []*serial.TypedMessage{
+						SecuritySettings: []*anypb.Any{
 							serial.ToTypedMessage(&tls.Config{
 								AllowInsecure:                    true,
 								PinnedPeerCertificateChainSha256: [][]byte{certHash},
@@ -688,7 +689,7 @@ func TestSimpleTLSConnectionPinned(t *testing.T) {
 	common.Must(err)
 	defer CloseAllServers(servers)
 
-	if err := testTCPConn(clientPort, 1024, time.Second*2)(); err != nil {
+	if err := testTCPConn(clientPort, 1024, time.Second*20)(); err != nil {
 		t.Fatal(err)
 	}
 }

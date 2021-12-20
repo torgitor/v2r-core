@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/ptypes/any"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/log"
@@ -36,67 +38,93 @@ func TestVMessDynamicPort(t *testing.T) {
 	defer tcpServer.Close()
 
 	userID := protocol.NewID(uuid.New())
+
+	retry := 1
 	serverPort := tcp.PickPort()
-	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
-			}),
-		},
-		Inbound: []*core.InboundHandlerConfig{
-			{
-				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
-					PortRange: net.SinglePortRange(serverPort),
-					Listen:    net.NewIPOrDomain(net.LocalHostIP),
-				}),
-				ProxySettings: serial.ToTypedMessage(&inbound.Config{
-					User: []*protocol.User{
-						{
-							Account: serial.ToTypedMessage(&vmess.Account{
-								Id: userID.String(),
-							}),
-						},
-					},
-					Detour: &inbound.DetourConfig{
-						To: "detour",
-					},
+	for {
+		serverConfig := &core.Config{
+			App: []*anypb.Any{
+				serial.ToTypedMessage(&log.Config{
+					Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 				}),
 			},
-			{
-				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
-					PortRange: &net.PortRange{
-						From: uint32(serverPort + 1),
-						To:   uint32(serverPort + 100),
-					},
-					Listen: net.NewIPOrDomain(net.LocalHostIP),
-					AllocationStrategy: &proxyman.AllocationStrategy{
-						Type: proxyman.AllocationStrategy_Random,
-						Concurrency: &proxyman.AllocationStrategy_AllocationStrategyConcurrency{
-							Value: 2,
+			Inbound: []*core.InboundHandlerConfig{
+				{
+					ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+						PortRange: net.SinglePortRange(serverPort),
+						Listen:    net.NewIPOrDomain(net.LocalHostIP),
+					}),
+					ProxySettings: serial.ToTypedMessage(&inbound.Config{
+						User: []*protocol.User{
+							{
+								Account: serial.ToTypedMessage(&vmess.Account{
+									Id: userID.String(),
+								}),
+							},
 						},
-						Refresh: &proxyman.AllocationStrategy_AllocationStrategyRefresh{
-							Value: 5,
+						Detour: &inbound.DetourConfig{
+							To: "detour",
 						},
-					},
-				}),
-				ProxySettings: serial.ToTypedMessage(&inbound.Config{}),
-				Tag:           "detour",
+					}),
+				},
+				{
+					ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+						PortRange: net.SinglePortRange(serverPort + 100),
+						Listen:    net.NewIPOrDomain(net.LocalHostIP),
+					}),
+					ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
+						Address: net.NewIPOrDomain(dest.Address),
+						Port:    uint32(dest.Port),
+						NetworkList: &net.NetworkList{
+							Network: []net.Network{net.Network_TCP},
+						},
+					}),
+				},
+				{
+					ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+						PortRange: &net.PortRange{
+							From: uint32(serverPort + 1),
+							To:   uint32(serverPort + 99),
+						},
+						Listen: net.NewIPOrDomain(net.LocalHostIP),
+						AllocationStrategy: &proxyman.AllocationStrategy{
+							Type: proxyman.AllocationStrategy_Random,
+							Concurrency: &proxyman.AllocationStrategy_AllocationStrategyConcurrency{
+								Value: 2,
+							},
+							Refresh: &proxyman.AllocationStrategy_AllocationStrategyRefresh{
+								Value: 5,
+							},
+						},
+					}),
+					ProxySettings: serial.ToTypedMessage(&inbound.Config{}),
+					Tag:           "detour",
+				},
 			},
-		},
-		Outbound: []*core.OutboundHandlerConfig{
-			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+			Outbound: []*core.OutboundHandlerConfig{
+				{
+					ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+				},
 			},
-		},
+		}
+
+		server, _ := InitializeServerConfig(serverConfig)
+		if server != nil && tcpConnAvailableAtPort(t, serverPort+100) {
+			defer CloseServer(server)
+			break
+		}
+		retry++
+		if retry > 5 {
+			t.Fatal("All attempts failed to start server")
+		}
+		serverPort = tcp.PickPort()
 	}
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -135,15 +163,30 @@ func TestVMessDynamicPort(t *testing.T) {
 		},
 	}
 
-	servers, err := InitializeServerConfigs(serverConfig, clientConfig)
+	server, err := InitializeServerConfig(clientConfig)
 	common.Must(err)
-	defer CloseAllServers(servers)
+	defer CloseServer(server)
 
-	for i := 0; i < 10; i++ {
-		if err := testTCPConn(clientPort, 1024, time.Second*2)(); err != nil {
-			t.Error(err)
+	if !tcpConnAvailableAtPort(t, clientPort) {
+		t.Fail()
+	}
+}
+
+func tcpConnAvailableAtPort(t *testing.T, port net.Port) bool {
+	for i := 1; ; i++ {
+		if i > 10 {
+			t.Log("All attempts failed to test tcp conn")
+			return false
+		}
+		time.Sleep(time.Millisecond * 10)
+		if err := testTCPConn(port, 1024, time.Second*2)(); err != nil {
+			t.Log("err ", err)
+		} else {
+			t.Log("success with", i, "attempts")
+			break
 		}
 	}
+	return true
 }
 
 func TestVMessGCM(t *testing.T) {
@@ -157,10 +200,9 @@ func TestVMessGCM(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -190,10 +232,9 @@ func TestVMessGCM(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -263,10 +304,9 @@ func TestVMessGCMReadv(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -296,10 +336,9 @@ func TestVMessGCMReadv(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -372,10 +411,9 @@ func TestVMessGCMUDP(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -403,12 +441,11 @@ func TestVMessGCMUDP(t *testing.T) {
 		},
 	}
 
-	clientPort := tcp.PickPort()
+	clientPort := udp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -475,10 +512,9 @@ func TestVMessChacha20(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -508,10 +544,9 @@ func TestVMessChacha20(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -579,10 +614,9 @@ func TestVMessNone(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -612,10 +646,9 @@ func TestVMessNone(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -682,10 +715,9 @@ func TestVMessKCP(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := udp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*any.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -718,10 +750,9 @@ func TestVMessKCP(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -793,10 +824,9 @@ func TestVMessKCPLarge(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := udp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -848,10 +878,9 @@ func TestVMessKCPLarge(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -946,10 +975,9 @@ func TestVMessGCMMux(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -979,10 +1007,9 @@ func TestVMessGCMMux(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -1065,10 +1092,9 @@ func TestVMessGCMMuxUDP(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -1099,10 +1125,9 @@ func TestVMessGCMMuxUDP(t *testing.T) {
 	clientPort := tcp.PickPort()
 	clientUDPPort := udp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -1196,10 +1221,9 @@ func TestVMessZero(t *testing.T) {
 	userID := protocol.NewID(uuid.New())
 	serverPort := tcp.PickPort()
 	serverConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -1229,10 +1253,9 @@ func TestVMessZero(t *testing.T) {
 
 	clientPort := tcp.PickPort()
 	clientConfig := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{
-				ErrorLogLevel: clog.Severity_Debug,
-				ErrorLogType:  log.LogType_Console,
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
 			}),
 		},
 		Inbound: []*core.InboundHandlerConfig{
@@ -1283,6 +1306,217 @@ func TestVMessZero(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		errg.Go(testTCPConn(clientPort, 1024*1024, time.Second*30))
 	}
+	if err := errg.Wait(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestVMessGCMLengthAuth(t *testing.T) {
+	tcpServer := tcp.Server{
+		MsgProcessor: xor,
+	}
+	dest, err := tcpServer.Start()
+	common.Must(err)
+	defer tcpServer.Close()
+
+	userID := protocol.NewID(uuid.New())
+	serverPort := tcp.PickPort()
+	serverConfig := &core.Config{
+		App: []*anypb.Any{
+			serial.ToTypedMessage(&log.Config{
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
+			}),
+		},
+		Inbound: []*core.InboundHandlerConfig{
+			{
+				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+					PortRange: net.SinglePortRange(serverPort),
+					Listen:    net.NewIPOrDomain(net.LocalHostIP),
+				}),
+				ProxySettings: serial.ToTypedMessage(&inbound.Config{
+					User: []*protocol.User{
+						{
+							Account: serial.ToTypedMessage(&vmess.Account{
+								Id:      userID.String(),
+								AlterId: 64,
+							}),
+						},
+					},
+				}),
+			},
+		},
+		Outbound: []*core.OutboundHandlerConfig{
+			{
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+			},
+		},
+	}
+
+	clientPort := tcp.PickPort()
+	clientConfig := &core.Config{
+		App: []*anypb.Any{
+			serial.ToTypedMessage(&log.Config{
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
+			}),
+		},
+		Inbound: []*core.InboundHandlerConfig{
+			{
+				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+					PortRange: net.SinglePortRange(clientPort),
+					Listen:    net.NewIPOrDomain(net.LocalHostIP),
+				}),
+				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
+					Address: net.NewIPOrDomain(dest.Address),
+					Port:    uint32(dest.Port),
+					NetworkList: &net.NetworkList{
+						Network: []net.Network{net.Network_TCP},
+					},
+				}),
+			},
+		},
+		Outbound: []*core.OutboundHandlerConfig{
+			{
+				ProxySettings: serial.ToTypedMessage(&outbound.Config{
+					Receiver: []*protocol.ServerEndpoint{
+						{
+							Address: net.NewIPOrDomain(net.LocalHostIP),
+							Port:    uint32(serverPort),
+							User: []*protocol.User{
+								{
+									Account: serial.ToTypedMessage(&vmess.Account{
+										Id:      userID.String(),
+										AlterId: 64,
+										SecuritySettings: &protocol.SecurityConfig{
+											Type: protocol.SecurityType_AES128_GCM,
+										},
+										TestsEnabled: "AuthenticatedLength",
+									}),
+								},
+							},
+						},
+					},
+				}),
+			},
+		},
+	}
+
+	servers, err := InitializeServerConfigs(serverConfig, clientConfig)
+	if err != nil {
+		t.Fatal("Failed to initialize all servers: ", err.Error())
+	}
+	defer CloseAllServers(servers)
+
+	var errg errgroup.Group
+	for i := 0; i < 10; i++ {
+		errg.Go(testTCPConn(clientPort, 10240*1024, time.Second*40))
+	}
+
+	if err := errg.Wait(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestVMessGCMLengthAuthPlusNoTerminationSignal(t *testing.T) {
+	tcpServer := tcp.Server{
+		MsgProcessor: xor,
+	}
+	dest, err := tcpServer.Start()
+	common.Must(err)
+	defer tcpServer.Close()
+
+	userID := protocol.NewID(uuid.New())
+	serverPort := tcp.PickPort()
+	serverConfig := &core.Config{
+		App: []*anypb.Any{
+			serial.ToTypedMessage(&log.Config{
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
+			}),
+		},
+		Inbound: []*core.InboundHandlerConfig{
+			{
+				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+					PortRange: net.SinglePortRange(serverPort),
+					Listen:    net.NewIPOrDomain(net.LocalHostIP),
+				}),
+				ProxySettings: serial.ToTypedMessage(&inbound.Config{
+					User: []*protocol.User{
+						{
+							Account: serial.ToTypedMessage(&vmess.Account{
+								Id:           userID.String(),
+								AlterId:      64,
+								TestsEnabled: "AuthenticatedLength|NoTerminationSignal",
+							}),
+						},
+					},
+				}),
+			},
+		},
+		Outbound: []*core.OutboundHandlerConfig{
+			{
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+			},
+		},
+	}
+
+	clientPort := tcp.PickPort()
+	clientConfig := &core.Config{
+		App: []*anypb.Any{
+			serial.ToTypedMessage(&log.Config{
+				Error: &log.LogSpecification{Level: clog.Severity_Debug, Type: log.LogType_Console},
+			}),
+		},
+		Inbound: []*core.InboundHandlerConfig{
+			{
+				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+					PortRange: net.SinglePortRange(clientPort),
+					Listen:    net.NewIPOrDomain(net.LocalHostIP),
+				}),
+				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
+					Address: net.NewIPOrDomain(dest.Address),
+					Port:    uint32(dest.Port),
+					NetworkList: &net.NetworkList{
+						Network: []net.Network{net.Network_TCP},
+					},
+				}),
+			},
+		},
+		Outbound: []*core.OutboundHandlerConfig{
+			{
+				ProxySettings: serial.ToTypedMessage(&outbound.Config{
+					Receiver: []*protocol.ServerEndpoint{
+						{
+							Address: net.NewIPOrDomain(net.LocalHostIP),
+							Port:    uint32(serverPort),
+							User: []*protocol.User{
+								{
+									Account: serial.ToTypedMessage(&vmess.Account{
+										Id:      userID.String(),
+										AlterId: 64,
+										SecuritySettings: &protocol.SecurityConfig{
+											Type: protocol.SecurityType_AES128_GCM,
+										},
+										TestsEnabled: "AuthenticatedLength|NoTerminationSignal",
+									}),
+								},
+							},
+						},
+					},
+				}),
+			},
+		},
+	}
+
+	servers, err := InitializeServerConfigs(serverConfig, clientConfig)
+	if err != nil {
+		t.Fatal("Failed to initialize all servers: ", err.Error())
+	}
+	defer CloseAllServers(servers)
+
+	var errg errgroup.Group
+	for i := 0; i < 10; i++ {
+		errg.Go(testTCPConn(clientPort, 10240*1024, time.Second*40))
+	}
+
 	if err := errg.Wait(); err != nil {
 		t.Error(err)
 	}

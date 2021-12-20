@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/dispatcher"
@@ -102,7 +102,7 @@ func genTestBinaryPath() {
 	testBinaryPathGen.Do(func() {
 		var tempDir string
 		common.Must(retry.Timed(5, 100).On(func() error {
-			dir, err := ioutil.TempDir("", "v2ray")
+			dir, err := os.MkdirTemp("", "v2ray")
 			if err != nil {
 				return err
 			}
@@ -140,6 +140,23 @@ func CloseAllServers(servers []*exec.Cmd) {
 	log.Record(&log.GeneralMessage{
 		Severity: log.Severity_Info,
 		Content:  "All server closed.",
+	})
+}
+
+func CloseServer(server *exec.Cmd) {
+	log.Record(&log.GeneralMessage{
+		Severity: log.Severity_Info,
+		Content:  "Closing server.",
+	})
+	if runtime.GOOS == "windows" {
+		server.Process.Kill()
+	} else {
+		server.Process.Signal(syscall.SIGTERM)
+	}
+	server.Process.Wait()
+	log.Record(&log.GeneralMessage{
+		Severity: log.Severity_Info,
+		Content:  "Server closed.",
 	})
 }
 

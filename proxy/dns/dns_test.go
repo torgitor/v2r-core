@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/miekg/dns"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/dispatcher"
@@ -90,7 +91,7 @@ func TestUDPDNSTunnel(t *testing.T) {
 
 	serverPort := udp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServers: []*net.Endpoint{
 					{
@@ -207,7 +208,7 @@ func TestTCPDNSTunnel(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServer: []*dnsapp.NameServer{
 					{
@@ -293,7 +294,7 @@ func TestUDP2TCPDNSTunnel(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServer: []*dnsapp.NameServer{
 					{

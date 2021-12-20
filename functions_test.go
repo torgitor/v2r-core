@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/dispatcher"
@@ -46,7 +47,7 @@ func TestV2RayDial(t *testing.T) {
 	defer tcpServer.Close()
 
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dispatcher.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
@@ -61,7 +62,7 @@ func TestV2RayDial(t *testing.T) {
 	cfgBytes, err := proto.Marshal(config)
 	common.Must(err)
 
-	server, err := core.StartInstance("protobuf", cfgBytes)
+	server, err := core.StartInstance(core.FormatProtobuf, cfgBytes)
 	common.Must(err)
 	defer server.Close()
 
@@ -96,7 +97,7 @@ func TestV2RayDialUDPConn(t *testing.T) {
 	defer udpServer.Close()
 
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dispatcher.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
@@ -111,7 +112,7 @@ func TestV2RayDialUDPConn(t *testing.T) {
 	cfgBytes, err := proto.Marshal(config)
 	common.Must(err)
 
-	server, err := core.StartInstance("protobuf", cfgBytes)
+	server, err := core.StartInstance(core.FormatProtobuf, cfgBytes)
 	common.Must(err)
 	defer server.Close()
 
@@ -163,7 +164,7 @@ func TestV2RayDialUDP(t *testing.T) {
 	defer udpServer2.Close()
 
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dispatcher.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
@@ -178,7 +179,7 @@ func TestV2RayDialUDP(t *testing.T) {
 	cfgBytes, err := proto.Marshal(config)
 	common.Must(err)
 
-	server, err := core.StartInstance("protobuf", cfgBytes)
+	server, err := core.StartInstance(core.FormatProtobuf, cfgBytes)
 	common.Must(err)
 	defer server.Close()
 

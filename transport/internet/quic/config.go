@@ -1,5 +1,3 @@
-// +build !confonly
-
 package quic
 
 import (
@@ -11,6 +9,7 @@ import (
 
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/protocol"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/transport/internet"
 )
 
@@ -41,7 +40,7 @@ func getHeader(config *Config) (internet.PacketHeader, error) {
 		return nil, nil
 	}
 
-	msg, err := config.Header.GetInstance()
+	msg, err := serial.GetInstanceOf(config.Header)
 	if err != nil {
 		return nil, err
 	}

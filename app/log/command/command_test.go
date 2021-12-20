@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/app/dispatcher"
 	"github.com/v2fly/v2ray-core/v4/app/log"
@@ -17,7 +19,7 @@ import (
 
 func TestLoggerRestart(t *testing.T) {
 	v, err := core.New(&core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&log.Config{}),
 			serial.ToTypedMessage(&dispatcher.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),

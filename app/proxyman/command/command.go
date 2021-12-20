@@ -1,5 +1,3 @@
-// +build !confonly
-
 package command
 
 import (
@@ -9,6 +7,7 @@ import (
 
 	core "github.com/v2fly/v2ray-core/v4"
 	"github.com/v2fly/v2ray-core/v4/common"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/features/inbound"
 	"github.com/v2fly/v2ray-core/v4/features/outbound"
 	"github.com/v2fly/v2ray-core/v4/proxy"
@@ -83,7 +82,7 @@ func (s *handlerServer) RemoveInbound(ctx context.Context, request *RemoveInboun
 }
 
 func (s *handlerServer) AlterInbound(ctx context.Context, request *AlterInboundRequest) (*AlterInboundResponse, error) {
-	rawOperation, err := request.Operation.GetInstance()
+	rawOperation, err := serial.GetInstanceOf(request.Operation)
 	if err != nil {
 		return nil, newError("unknown operation").Base(err)
 	}
@@ -112,7 +111,7 @@ func (s *handlerServer) RemoveOutbound(ctx context.Context, request *RemoveOutbo
 }
 
 func (s *handlerServer) AlterOutbound(ctx context.Context, request *AlterOutboundRequest) (*AlterOutboundResponse, error) {
-	rawOperation, err := request.Operation.GetInstance()
+	rawOperation, err := serial.GetInstanceOf(request.Operation)
 	if err != nil {
 		return nil, newError("unknown operation").Base(err)
 	}

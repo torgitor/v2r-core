@@ -1,5 +1,3 @@
-// +build !confonly
-
 package tcp
 
 import (
@@ -7,6 +5,7 @@ import (
 
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/net"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/common/session"
 	"github.com/v2fly/v2ray-core/v4/transport/internet"
 	"github.com/v2fly/v2ray-core/v4/transport/internet/tls"
@@ -34,7 +33,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 
 	tcpSettings := streamSettings.ProtocolSettings.(*Config)
 	if tcpSettings.HeaderSettings != nil {
-		headerConfig, err := tcpSettings.HeaderSettings.GetInstance()
+		headerConfig, err := serial.GetInstanceOf(tcpSettings.HeaderSettings)
 		if err != nil {
 			return nil, newError("failed to get header settings").Base(err).AtError()
 		}

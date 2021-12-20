@@ -8,6 +8,7 @@ import (
 	"github.com/v2fly/v2ray-core/v4/common"
 	"github.com/v2fly/v2ray-core/v4/common/mux"
 	"github.com/v2fly/v2ray-core/v4/common/net"
+	"github.com/v2fly/v2ray-core/v4/common/serial"
 	"github.com/v2fly/v2ray-core/v4/common/session"
 	"github.com/v2fly/v2ray-core/v4/features/outbound"
 	"github.com/v2fly/v2ray-core/v4/features/policy"
@@ -68,7 +69,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 	}
 
 	if config.SenderSettings != nil {
-		senderSettings, err := config.SenderSettings.GetInstance()
+		senderSettings, err := serial.GetInstanceOf(config.SenderSettings)
 		if err != nil {
 			return nil, err
 		}
@@ -85,7 +86,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 		}
 	}
 
-	proxyConfig, err := config.ProxySettings.GetInstance()
+	proxyConfig, err := serial.GetInstanceOf(config.ProxySettings)
 	if err != nil {
 		return nil, err
 	}
