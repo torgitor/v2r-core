@@ -49,6 +49,10 @@ import (
 	_ "github.com/v2fly/v2ray-core/v5/proxy/vmess/inbound"
 	_ "github.com/v2fly/v2ray-core/v5/proxy/vmess/outbound"
 
+	// Developer preview proxies
+	_ "github.com/v2fly/v2ray-core/v5/proxy/vlite/inbound"
+	_ "github.com/v2fly/v2ray-core/v5/proxy/vlite/outbound"
+
 	// Transports
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/domainsocket"
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/grpc"
@@ -57,6 +61,7 @@ import (
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/quic"
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/tcp"
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/tls"
+	_ "github.com/v2fly/v2ray-core/v5/transport/internet/tls/utls"
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/udp"
 	_ "github.com/v2fly/v2ray-core/v5/transport/internet/websocket"
 
