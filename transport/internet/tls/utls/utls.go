@@ -30,7 +30,9 @@ func (e Engine) Client(conn net.Conn, opts ...security.Option) (security.Conn, e
 	for _, v := range opts {
 		switch s := v.(type) {
 		case security.OptionWithALPN:
-			options = append(options, tls.WithNextProto(s.ALPNs...))
+			if e.config.ForceAlpn == ForcedALPN_TRANSPORT_PREFERENCE_TAKE_PRIORITY {
+				options = append(options, tls.WithNextProto(s.ALPNs...))
+			}
 		case security.OptionWithDestination:
 			options = append(options, tls.WithDestination(s.Dest))
 		default:
@@ -65,9 +67,16 @@ func (e Engine) Client(conn net.Conn, opts ...security.Option) (security.Conn, e
 	// ALPN is necessary for protocols like websocket to work. The uTLS setting may be overwritten on call into
 	// BuildHandshakeState, so we need to check the original tls settings.
 	if tlsConfig.NextProtos != nil {
-		for _, v := range utlsClientConn.Extensions {
+		for n, v := range utlsClientConn.Extensions {
 			if aplnExtension, ok := v.(*utls.ALPNExtension); ok {
-				aplnExtension.AlpnProtocols = tlsConfig.NextProtos
+				if e.config.ForceAlpn == ForcedALPN_TRANSPORT_PREFERENCE_TAKE_PRIORITY {
+					aplnExtension.AlpnProtocols = tlsConfig.NextProtos
+					break
+				}
+				if e.config.ForceAlpn == ForcedALPN_NO_ALPN {
+					utlsClientConn.Extensions = append(utlsClientConn.Extensions[:n], utlsClientConn.Extensions[n+1:]...)
+					break
+				}
 			}
 		}
 	}
@@ -81,7 +90,18 @@ func (e Engine) Client(conn net.Conn, opts ...security.Option) (security.Conn, e
 	if err != nil {
 		return nil, newError("unable to finish utls handshake").Base(err)
 	}
-	return utlsClientConn, nil
+	return uTLSClientConnection{utlsClientConn}, nil
+}
+
+type uTLSClientConnection struct {
+	*utls.UConn
+}
+
+func (u uTLSClientConnection) GetConnectionApplicationProtocol() (string, error) {
+	if err := u.Handshake(); err != nil {
+		return "", err
+	}
+	return u.ConnectionState().NegotiatedProtocol, nil
 }
 
 func uTLSConfigFromTLSConfig(config *systls.Config) (*utls.Config, error) { // nolint: unparam
