@@ -4,7 +4,7 @@ import (
 	"io"
 	"math/rand"
 
-	hyProtocol "github.com/apernet/hysteria/core/v2/international/protocol"
+	hyProtocol "github.com/v2fly/hysteria/core/v2/international/protocol"
 	"github.com/apernet/quic-go/quicvarint"
 
 	"github.com/v2fly/v2ray-core/v5/common/buf"
@@ -184,4 +184,27 @@ func (r *PacketReader) ReadMultiBufferWithMetadata() (*PacketPayload, error) {
 	}
 	b := buf.FromBytes(data)
 	return &PacketPayload{Target: *dest, Buffer: buf.MultiBuffer{b}}, nil
+}
+
+type PacketConnectionReader struct {
+	reader  *PacketReader
+	payload *PacketPayload
+}
+
+func (r *PacketConnectionReader) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	if r.payload == nil || r.payload.Buffer.IsEmpty() {
+		r.payload, err = r.reader.ReadMultiBufferWithMetadata()
+		if err != nil {
+			return
+		}
+	}
+
+	addr = &net.UDPAddr{
+		IP:   r.payload.Target.Address.IP(),
+		Port: int(r.payload.Target.Port),
+	}
+
+	r.payload.Buffer, n = buf.SplitFirstBytes(r.payload.Buffer, p)
+
+	return
 }

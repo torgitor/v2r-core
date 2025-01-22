@@ -3,9 +3,9 @@ package hysteria2
 import (
 	"time"
 
-	hyClient "github.com/apernet/hysteria/core/v2/client"
-	"github.com/apernet/hysteria/core/v2/international/protocol"
-	hyServer "github.com/apernet/hysteria/core/v2/server"
+	hyClient "github.com/v2fly/hysteria/core/v2/client"
+	"github.com/v2fly/hysteria/core/v2/international/protocol"
+	hyServer "github.com/v2fly/hysteria/core/v2/server"
 	"github.com/apernet/quic-go"
 
 	"github.com/v2fly/v2ray-core/v5/common/net"
@@ -68,7 +68,10 @@ func (c *HyConn) ReadPacket() (int, []byte, *net.Destination, error) {
 	}
 
 	if c.IsServer {
-		msg := <-c.ServerUDPSession.ReceiveCh
+		msg, ok := <-c.ServerUDPSession.ReceiveCh
+		if !ok {
+			return 0, nil, nil, newError("UDP session receive channel closed")
+		}
 		dest, err := net.ParseDestination("udp:" + msg.Addr)
 		return len(msg.Data), msg.Data, &dest, err
 	}
@@ -89,8 +92,8 @@ func (c *HyConn) Close() error {
 			return newError(CanNotUseUdpExtension)
 		}
 		if c.IsServer {
-			c.ServerUDPSession.Close()
-			return c.ServerUDPSession.Conn.Close()
+			c.ServerUDPSession.CloseWithErr(nil)
+			return nil
 		}
 		return c.ClientUDPSession.Close()
 	}

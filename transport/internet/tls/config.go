@@ -286,6 +286,14 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	case Config_TLS1_3:
 		config.MaxVersion = tls.VersionTLS13
 	}
+
+	if len(c.EchConfig) > 0 || len(c.Ech_DOHserver) > 0 {
+		err := ApplyECH(c, config)
+		if err != nil {
+			newError("unable to set ECH").AtError().Base(err).WriteToLog()
+		}
+	}
+
 	return config
 }
 
@@ -295,8 +303,13 @@ type Option func(*tls.Config)
 // WithDestination sets the server name in TLS config.
 func WithDestination(dest net.Destination) Option {
 	return func(config *tls.Config) {
-		if dest.Address.Family().IsDomain() && config.ServerName == "" {
-			config.ServerName = dest.Address.Domain()
+		if config.ServerName == "" {
+			switch dest.Address.Family() {
+			case net.AddressFamilyDomain:
+				config.ServerName = dest.Address.Domain()
+			case net.AddressFamilyIPv4, net.AddressFamilyIPv6:
+				config.ServerName = dest.Address.IP().String()
+			}
 		}
 	}
 }
