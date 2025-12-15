@@ -1,10 +1,12 @@
 package httpenrollmentconfirmation
 
 import (
+	"context"
 	"encoding/base32"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/v2fly/v2ray-core/v5/common"
 	"github.com/v2fly/v2ray-core/v5/transport/internet/tlsmirror"
@@ -14,17 +16,22 @@ import (
 func NewClientRoundTripperForEnrollmentConfirmation(
 	dial func(network, addr string) (net.Conn, error),
 	serverIdentity []byte,
-) (http.RoundTripper, error) {
+) (http.RoundTripper, RoundTripperMetadata, error) {
 	if dial == nil {
-		return nil, newError("nil dial function")
+		return nil, nil, newError("nil dial function")
 	}
 	if len(serverIdentity) == 0 {
-		return nil, newError("nil or empty server identity")
+		return nil, nil, newError("nil or empty server identity")
 	}
-	return &clientRoundtripper{
+	cr := &clientRoundtripper{
 		dial:           dial,
 		serverIdentity: serverIdentity,
-	}, nil
+	}
+	return cr, cr, nil
+}
+
+type RoundTripperMetadata interface {
+	IsCreatingSecondaryNewConnection() bool
 }
 
 type clientRoundtripper struct {
@@ -34,35 +41,72 @@ type clientRoundtripper struct {
 	currentConnInnerConn common.Closable
 	currentConn          http.RoundTripper
 	currentConnLock      sync.RWMutex
+
+	pendingNewConnection int
+	// DO NOT ATTEMPT TO ACQUIRE ANY LOCK WHILE HOLDING THIS LOCK
+	pendingNewConnectionLock sync.RWMutex
+}
+
+func (c *clientRoundtripper) IsCreatingSecondaryNewConnection() bool {
+	defer c.pendingNewConnectionLock.RUnlock()
+	c.pendingNewConnectionLock.RLock()
+	return c.pendingNewConnection >= 1
 }
 
 func (c *clientRoundtripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if c.IsCreatingSecondaryNewConnection() {
+		return nil, newError("another connection is being established, cannot create a secondary connection")
+	}
+	return c.roundTrip(request)
+}
+
+func (c *clientRoundtripper) roundTrip(request *http.Request) (*http.Response, error) {
 	c.currentConnLock.RLock()
 
 	if c.currentConn == nil {
 		c.currentConnLock.RUnlock()
+		c.pendingNewConnectionLock.Lock()
+		c.pendingNewConnection += 1
+		c.pendingNewConnectionLock.Unlock()
+		decreaseCount := func() {
+			c.pendingNewConnectionLock.Lock()
+			c.pendingNewConnection -= 1
+			c.pendingNewConnectionLock.Unlock()
+		}
 		if err := c.createNewConnection(); err != nil {
+			decreaseCount()
 			return nil, err // Failed to create a new connection
 		}
-		return c.RoundTrip(request)
+		resp, err := c.roundTrip(request)
+		decreaseCount()
+		return resp, err
 	}
 	defer c.currentConnLock.RUnlock()
 
-	// Use the current connection to perform the round trip
+	timeoutContext, _ := context.WithTimeout(context.Background(), time.Second*30) //nolint:govet
+	request = request.WithContext(timeoutContext)
+
 	resp, err := c.currentConn.RoundTrip(request)
+	// Use the current connection to perform the round trip
 	if err != nil {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+
 		defer func() {
+			c.currentConnLock.RUnlock()
 			c.currentConnLock.Lock()
-			defer c.currentConnLock.Unlock()
 			if c.currentConn != nil {
 				c.currentConnInnerConn.Close()
 				c.currentConnInnerConn = nil
 				c.currentConn = nil
 			}
+			c.currentConnLock.Unlock()
+			c.currentConnLock.RLock()
 		}()
 		return nil, newError("unable to roundtrip for enrollment verification").Base(err)
 	}
-	return resp, err
+	return resp, nil
 }
 
 func (c *clientRoundtripper) createNewConnection() error {
@@ -81,7 +125,7 @@ func (c *clientRoundtripper) createNewConnection() error {
 	c.currentConnInnerConn = conn
 	c.currentConn, err = httponconnection.NewSingleConnectionHTTPTransport(conn, "h2")
 	if err != nil {
-		conn.Close() // Close the connection if transport creation fails
+		_ = conn.Close() // Close the connection if transport creation fails
 		return newError("failed to create HTTP transport: ", err)
 	}
 	return nil
